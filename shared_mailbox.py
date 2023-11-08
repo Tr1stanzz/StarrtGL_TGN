@@ -1,7 +1,6 @@
 
 import sys
 import torch
-import dgl
 from torch.distributed import scatter_object_list,scatter,gather,all_reduce,ReduceOp
 import distparser
 import torch_scatter
@@ -56,7 +55,8 @@ class SharedMailBox():
         self.mail_size = [memory_param['mailbox_size'],2 * memory_param['dim_out'] + dim_edge_feat]
         self.node_memory = torch.zeros((self.num_nodes, memory_param['dim_out']), dtype=torch.float32,device =self.device) if _node_memory is None else _node_memory
         self.node_memory_ts = torch.zeros(self.num_nodes, dtype=torch.float32,device = self.device) if _node_memory_ts is None else _node_memory_ts
-        self.mailbox = torch.zeros(self.num_nodes, memory_param['mailbox_size'], 2 * memory_param['dim_out'] + dim_edge_feat,device = self.device, dtype=torch.float32) if _mailbox is None else _mailbox
+        mail_dim = 2 * memory_param['dim_out'] + dim_edge_feat + memory_param['dim_time'] if memory_param['mail_contain_time'] else 2 * memory_param['dim_out'] + dim_edge_feat
+        self.mailbox = torch.zeros(self.num_nodes, memory_param['mailbox_size'], mail_dim ,device = self.device, dtype=torch.float32) if _mailbox is None else _mailbox
         self.mailbox_ts = torch.zeros((self.num_nodes, memory_param['mailbox_size']), dtype=torch.float32,device  = self.device) if _mailbox_ts is None else _mailbox_ts
         self.next_mail_pos = torch.zeros((self.num_nodes), dtype=torch.long,device = self.device) if _next_mail_pos is None else _next_mail_pos
         self.update_mail_pos = _update_mail_pos
