@@ -779,7 +779,7 @@ vector<th::Tensor> neighbor_sample_from_nodes_with_before(
         int tid = omp_get_thread_num();
         NodeIDType node = nodes_data[i];
         TimeStampType rtts = ts_data[i];
-        int end_index = upper_bound(tnb.timestamp[node].begin(), tnb.timestamp[node].end(), rtts)-tnb.timestamp[node].begin();
+        int end_index = lower_bound(tnb.timestamp[node].begin(), tnb.timestamp[node].end(), rtts)-tnb.timestamp[node].begin();
         // int end_index = tnb.timestamp[node].end()-tnb.timestamp[node].begin();
         //cout<<node<<" "<<end_index<<" "<<tnb.deg[node]<<endl;
         if(tnb.deg[node]>fanout&&end_index>fanout){

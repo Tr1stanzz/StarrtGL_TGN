@@ -14,9 +14,9 @@ memory:
     mail_combine: 'last'
     memory_update: 'gru'
     mailbox_size: 1
-    mail_contain_time: True
+    mail_contain_time: False
     combine_node_feature: True
-    dim_out: 100
+    dim_out: 172
 gnn:
   - arch: 'transformer_attention'
     layer: 1

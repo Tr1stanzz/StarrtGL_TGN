@@ -3,6 +3,15 @@ import torch
 import gpustat
 from collections import Counter
 import matplotlib.pyplot as plt
+import yaml
+
+def parse_config(f):
+    conf = yaml.safe_load(open(f, 'r'))
+    sample_param = conf['sampling'][0]
+    memory_param = conf['memory'][0]
+    gnn_param = conf['gnn'][0]
+    train_param = conf['train'][0]
+    return sample_param, memory_param, gnn_param, train_param
 
 
 class MergeLayer(torch.nn.Module):
@@ -110,6 +119,63 @@ def get_neighbor_finder(data, uniform, max_node_idx=None):
 
   return NeighborFinder(adj_list, uniform=uniform)
 
+def get_batch_neighbor_finder(batchData):
+  edge_index = batchData.edge_index[0]
+  edge_ts = batchData.edge_ts[0]
+  eids = batchData.eids[0]
+
+  return BatchNeighborFinder(edge_index, edge_ts, eids)
+
+class BatchNeighborFinder:
+  def __init__(self, edge_index, edge_ts, eids):
+    sample_ts, ts_inverse_indices, ts_count = torch.unique_consecutive(edge_ts[1,:], return_counts=True, return_inverse=True)
+    _, ts_begins = np.unique(ts_inverse_indices.cpu().numpy(), return_index=True)
+    self.sample_ts = sample_ts
+    self.ts_begins = torch.tensor(ts_begins)
+    self.ts_count = ts_count
+    self.neighbor_data = torch.cat([edge_index,edge_ts[0,:].unsqueeze(0),eids.unsqueeze(0)],dim = 0)
+
+  def find_before(self, src_idx, cut_time):
+    """
+    Extracts all the interactions happening before cut_time for user src_idx in the overall interaction graph. The returned interactions are sorted by time.
+
+    Returns a Tensor include neighbors, timestamps and edge_indices
+
+    """
+    ts_idx = torch.nonzero(self.sample_ts == cut_time)[:,0]
+    neighbor_tensor = None
+    for s, c in zip(self.ts_begins[ts_idx], self.ts_count[ts_idx]):
+      neighbors = torch.narrow(self.neighbor_data,1,s,c)
+      if(torch.unique(torch.cat([neighbors[1,:], torch.tensor([src_idx])],dim=0),dim=0).shape[0]==1):
+        neighbor_tensor = neighbors
+        return neighbor_tensor
+    return neighbor_tensor
+  
+  def get_temporal_neighbor(self, source_nodes, timestamps, n_neighbors=20):
+    assert (len(source_nodes) == len(timestamps))
+
+    tmp_n_neighbors = n_neighbors if n_neighbors > 0 else 1
+    # NB! All interactions described in these matrices are sorted in each row by time
+    neighbors = np.zeros((len(source_nodes), tmp_n_neighbors)).astype(
+      np.int32)  # each entry in position (i,j) represent the id of the item targeted by user src_idx_l[i] with an interaction happening before cut_time_l[i]
+    edge_times = np.zeros((len(source_nodes), tmp_n_neighbors)).astype(
+      np.float32)  # each entry in position (i,j) represent the timestamp of an interaction between user src_idx_l[i] and item neighbors[i,j] happening before cut_time_l[i]
+    edge_idxs = np.zeros((len(source_nodes), tmp_n_neighbors)).astype(
+      np.int32)  # each entry in position (i,j) represent the interaction index of an interaction between user src_idx_l[i] and item neighbors[i,j] happening before cut_time_l[i]
+
+    for i, (source_node, timestamp) in enumerate(zip(source_nodes, timestamps)):
+      neighbor_tensor = self.find_before(source_node, timestamp)
+
+      if neighbor_tensor is not None and n_neighbors > 0:
+          # Take most recent interactions
+        source_neighbors, source_edge_idxs, source_edge_times = neighbor_tensor[0,:].numpy(), neighbor_tensor[3,:].numpy(), neighbor_tensor[2,:].numpy()
+
+        neighbors[i, n_neighbors - len(source_neighbors):] = source_neighbors
+        edge_times[i, n_neighbors - len(source_edge_times):] = source_edge_times
+        edge_idxs[i, n_neighbors - len(source_edge_idxs):] = source_edge_idxs
+    print(neighbors, edge_idxs, edge_times)
+
+    return neighbors, edge_idxs, edge_times
 
 class NeighborFinder:
   def __init__(self, adj_list, uniform=False, seed=None):

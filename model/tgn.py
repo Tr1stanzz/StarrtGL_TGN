@@ -3,17 +3,17 @@ import numpy as np
 import torch
 from collections import defaultdict
 
-from utils.utils import MergeLayer
+from utils.utils import MergeLayer, get_batch_neighbor_finder
 from modules.memory import Memory
 from modules.message_aggregator import get_message_aggregator
 from modules.message_function import get_message_function
 from modules.memory_updater import get_memory_updater
 from modules.embedding_module import get_embedding_module
 from model.time_encoding import TimeEncode
-
+from shared_mailbox import SharedMailBox, SharedRPCMemoryManager
 
 class TGN(torch.nn.Module):
-  def __init__(self, neighbor_finder, node_features, edge_features, device, n_layers=2,
+  def __init__(self, device, n_node_features, n_edge_features, n_layers=2,
                n_heads=2, dropout=0.1, use_memory=False,
                memory_update_at_start=True, message_dimension=100,
                memory_dimension=500, embedding_module_type="graph_attention",
@@ -28,16 +28,14 @@ class TGN(torch.nn.Module):
     super(TGN, self).__init__()
 
     self.n_layers = n_layers
-    self.neighbor_finder = neighbor_finder
+    # self.neighbor_finder = neighbor_finder
     self.device = device
     self.logger = logging.getLogger(__name__)
+    # self.node_raw_features = torch.from_numpy(node_features.astype(np.float32)).to(device)
+    # self.edge_raw_features = torch.from_numpy(edge_features.astype(np.float32)).to(device)
 
-    self.node_raw_features = torch.from_numpy(node_features.astype(np.float32)).to(device)
-    self.edge_raw_features = torch.from_numpy(edge_features.astype(np.float32)).to(device)
-
-    self.n_node_features = self.node_raw_features.shape[1]
-    self.n_nodes = self.node_raw_features.shape[0]
-    self.n_edge_features = self.edge_raw_features.shape[1]
+    self.n_node_features = n_node_features
+    self.n_edge_features = n_edge_features
     self.embedding_dimension = self.n_node_features
     self.n_neighbors = n_neighbors
     self.embedding_module_type = embedding_module_type
@@ -58,11 +56,10 @@ class TGN(torch.nn.Module):
     if self.use_memory:
       self.memory_dimension = memory_dimension
       self.memory_update_at_start = memory_update_at_start
-      raw_message_dimension = 2 * self.memory_dimension + self.n_edge_features + \
-                              self.time_encoder.dimension
+      raw_message_dimension = 2 * self.memory_dimension + self.n_edge_features \
+                              + self.time_encoder.dimension
       message_dimension = message_dimension if message_function != "identity" else raw_message_dimension
-      self.memory = Memory(n_nodes=self.n_nodes,
-                           memory_dimension=self.memory_dimension,
+      self.memory = Memory(memory_dimension=self.memory_dimension,
                            input_dimension=message_dimension,
                            message_dimension=message_dimension,
                            device=device)
@@ -80,10 +77,6 @@ class TGN(torch.nn.Module):
     self.embedding_module_type = embedding_module_type
 
     self.embedding_module = get_embedding_module(module_type=embedding_module_type,
-                                                 node_features=self.node_raw_features,
-                                                 edge_features=self.edge_raw_features,
-                                                 memory=self.memory,
-                                                 neighbor_finder=self.neighbor_finder,
                                                  time_encoder=self.time_encoder,
                                                  n_layers=self.n_layers,
                                                  n_node_features=self.n_node_features,
@@ -101,7 +94,7 @@ class TGN(torch.nn.Module):
                                      1)
 
   def compute_temporal_embeddings(self, source_nodes, destination_nodes, negative_nodes, edge_times,
-                                  edge_idxs, n_neighbors=20, contains_negative=True):
+                                  n_neighbors=20, contains_negative=True):
     """
     Compute temporal embeddings for sources, destinations, and negatively sampled destinations.
 
@@ -128,13 +121,12 @@ class TGN(torch.nn.Module):
     memory = None
     time_diffs = None
     if self.use_memory:
-      if self.memory_update_at_start:
-        # Update memory for all nodes with messages stored in previous batches
-        memory, last_update = self.get_updated_memory(list(range(self.n_nodes)),
-                                                      self.memory.messages)
-      else:
-        memory = self.memory.get_memory(list(range(self.n_nodes)))
-        last_update = self.memory.last_update
+      # Update memory for all nodes with messages stored in previous batches
+      # memory, last_update = self.get_updated_memory(list(range(self.n_nodes)),
+      #                                             self.memory.messages)
+      # print(self.memory.memory.shape, self.memory.last_update.shape)
+      unique_node_ids = torch.nonzero(self.memory.mail_ts > self.memory.last_update).squeeze(1)
+      memory, last_update = self.memory_updater.get_updated_memory_by_mailbox(unique_node_ids, self.time_encoder)
 
       ### Compute differences between the time the memory of a node was last updated,
       ### and the time for which we want to compute the embedding of a node
@@ -168,34 +160,22 @@ class TGN(torch.nn.Module):
     else:
       negative_node_embedding = None
 
-    if self.use_memory:
-      if self.memory_update_at_start:
-        # Persist the updates to the memory only for sources and destinations (since now we have
-        # new messages for them)
-        self.update_memory(positives, self.memory.messages)
 
-        assert torch.allclose(memory[positives], self.memory.get_memory(positives), atol=1e-5), \
-          "Something wrong in how the memory was updated"
+      # Store the messages for the next batch
 
-        # Remove messages for the positives since we have already updated the memory using them
-        self.memory.clear_messages(positives)
 
-      unique_sources, source_id_to_messages = self.get_raw_messages(source_nodes,
-                                                                    source_node_embedding,
-                                                                    destination_nodes,
-                                                                    destination_node_embedding,
-                                                                    edge_times, edge_idxs)
-      unique_destinations, destination_id_to_messages = self.get_raw_messages(destination_nodes,
-                                                                              destination_node_embedding,
-                                                                              source_nodes,
-                                                                              source_node_embedding,
-                                                                              edge_times, edge_idxs)
-      if self.memory_update_at_start:
-        self.memory.store_raw_messages(unique_sources, source_id_to_messages)
-        self.memory.store_raw_messages(unique_destinations, destination_id_to_messages)
-      else:
-        self.update_memory(unique_sources, source_id_to_messages)
-        self.update_memory(unique_destinations, destination_id_to_messages)
+      # unique_sources, source_id_to_messages = self.get_raw_messages(source_nodes,
+      #                                                               source_node_embedding,
+      #                                                               destination_nodes,
+      #                                                               destination_node_embedding,
+      #                                                               edge_times, edge_idxs)
+      # unique_destinations, destination_id_to_messages = self.get_raw_messages(destination_nodes,
+      #                                                                         destination_node_embedding,
+      #                                                                         source_nodes,
+      #                                                                         source_node_embedding,
+      #                                                                         edge_times, edge_idxs)
+      # self.memory.store_raw_messages(unique_sources, source_id_to_messages)
+      # self.memory.store_raw_messages(unique_destinations, destination_id_to_messages)
 
       if self.dyrep and contains_negative:
         source_node_embedding = memory[source_nodes]
@@ -204,8 +184,7 @@ class TGN(torch.nn.Module):
 
     return source_node_embedding, destination_node_embedding, negative_node_embedding
 
-  def compute_edge_probabilities(self, source_nodes, destination_nodes, negative_nodes, edge_times,
-                                 edge_idxs, n_neighbors=20):
+  def forward(self, batchData, edge_features, mailbox=None, n_neighbors=20):
     """
     Compute probabilities for edges between sources and destination and between sources and
     negatives by first computing temporal embeddings using the TGN encoder and then feeding them
@@ -218,10 +197,25 @@ class TGN(torch.nn.Module):
     layer
     :return: Probabilities for both the positive and negative edges
     """
-    n_samples = len(source_nodes)
-    source_node_embedding, destination_node_embedding, negative_node_embedding = self.compute_temporal_embeddings(
-      source_nodes, destination_nodes, negative_nodes, edge_times, edge_idxs, n_neighbors)
 
+    source_nodes = batchData.meta_data['src_id']
+    destination_nodes = batchData.meta_data['dst_pos_id']
+    negative_nodes= batchData.meta_data['dst_neg_id']
+    edge_times = batchData.roots.ts
+    n_samples = len(source_nodes)
+
+    if mailbox is not None:
+      self.memory.load_memory_from_mail(mailbox, batchData.nids.to(self.device))
+    self.embedding_module.load_features(batchData)
+    neighbor_finder = get_batch_neighbor_finder(batchData)
+    self.set_neighbor_finder(neighbor_finder)
+
+    source_node_embedding, destination_node_embedding, negative_node_embedding = self.compute_temporal_embeddings(
+    source_nodes.numpy(), destination_nodes.numpy(), negative_nodes.numpy(), edge_times.numpy(), n_neighbors)
+
+    block_ptr = batchData.nids.to(self.device)
+    ts = batchData.roots.ts.to(self.device)
+    mailbox.get_memory_to_update(block_ptr,source_nodes,destination_nodes,ts,edge_features,self.memory.memory,self.memory.last_update)
     if not self.use_inner_product:
       score = self.affinity_score(torch.cat([source_node_embedding, source_node_embedding], dim=0),
                                 torch.cat([destination_node_embedding,
@@ -247,7 +241,7 @@ class TGN(torch.nn.Module):
     # Update the memory with the aggregated messages
     self.memory_updater.update_memory(unique_nodes, unique_messages,
                                       timestamps=unique_timestamps)
-
+    
   def get_updated_memory(self, nodes, messages):
     # Aggregate messages for the same nodes
     unique_nodes, unique_messages, unique_timestamps = \

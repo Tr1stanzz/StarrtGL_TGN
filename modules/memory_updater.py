@@ -29,6 +29,31 @@ class SequenceMemoryUpdater(MemoryUpdater):
 
     self.memory.set_memory(unique_node_ids, updated_memory)
 
+  # def update_memory_by_mailbox(self, unique_node_ids):
+  #   if len(unique_node_ids) <= 0:
+  #     return
+
+  #   memory = self.memory.get_memory(unique_node_ids)
+  #   self.memory.last_update[unique_node_ids] = self.memory.mail_ts[unique_node_ids]
+  #   updated_memory = self.memory_updater(self.memory.mail[unique_node_ids].squeeze(1), memory)
+  #   self.memory.set_memory(unique_node_ids, updated_memory)
+
+  def get_updated_memory_by_mailbox(self, unique_node_ids, time_encoder):
+    if len(unique_node_ids) <= 0:
+      # print("WTF?!")
+      return self.memory.memory.data.clone(), self.memory.last_update.data.clone()
+    
+    updated_memory = self.memory.memory.data.clone()
+    delta_time = self.memory.mail_ts[unique_node_ids] - self.memory.last_update[unique_node_ids]
+    time_encoding = time_encoder(delta_time.unsqueeze(1)).view(len(unique_node_ids), -1)
+    mails = self.memory.mail[unique_node_ids].squeeze(1)
+    mails = torch.cat([mails, time_encoding], dim=1)
+    updated_memory[unique_node_ids] = self.memory_updater(mails, updated_memory[unique_node_ids])
+
+    updated_last_update = self.memory.last_update.data.clone()
+    updated_last_update[unique_node_ids] = self.memory.mail_ts[unique_node_ids]
+    return updated_memory, updated_last_update
+
   def get_updated_memory(self, unique_node_ids, unique_messages, timestamps):
     if len(unique_node_ids) <= 0:
       return self.memory.memory.data.clone(), self.memory.last_update.data.clone()

@@ -7,30 +7,24 @@ from copy import deepcopy
 
 class Memory(nn.Module):
 
-  def __init__(self, n_nodes, memory_dimension, input_dimension, message_dimension=None,
+  def __init__(self, memory_dimension, input_dimension, message_dimension=None,
                device="cpu", combination_method='sum'):
     super(Memory, self).__init__()
-    self.n_nodes = n_nodes
     self.memory_dimension = memory_dimension
     self.input_dimension = input_dimension
     self.message_dimension = message_dimension
     self.device = device
 
     self.combination_method = combination_method
-
-    self.__init_memory__()
-
-  def __init_memory__(self):
-    """
-    Initializes the memory to all zeros. It should be called at the start of each epoch.
-    """
-    # Treat memory as parameter so that it is saved and loaded together with the model
-    self.memory = nn.Parameter(torch.zeros((self.n_nodes, self.memory_dimension)).to(self.device),
-                               requires_grad=False)
-    self.last_update = nn.Parameter(torch.zeros(self.n_nodes).to(self.device),
-                                    requires_grad=False)
-
-    self.messages = defaultdict(list)
+  
+  def load_memory_from_mail(self, mailbox=None, node_ids=None):
+    if mailbox is not None:
+       with torch.no_grad():
+        memory,memory_ts,mail,mail_ts = mailbox.get_memory_by_scatter(node_ids)
+        self.memory = memory.clone()
+        self.last_update = memory_ts.clone()
+        self.mail = mail.clone()
+        self.mail_ts = mail_ts.clone()
 
   def store_raw_messages(self, nodes, node_id_to_messages):
     for node in nodes:
@@ -40,6 +34,7 @@ class Memory(nn.Module):
     return self.memory[node_idxs, :]
 
   def set_memory(self, node_idxs, values):
+    self.memory = self.memory.clone()
     self.memory[node_idxs, :] = values
 
   def get_last_update(self, node_idxs):
