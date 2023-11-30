@@ -105,7 +105,7 @@ def select_free_gpu():
     for i in gpus:
         gpu_stats = gpustat.GPUStatCollection.new_query()
         mem.append(gpu_stats.jsonify()["gpus"][i]["memory.used"])
-    print(mem)
+    # print(mem)
     return str(gpus[np.argmin(mem)])
 
 def get_neighbor_finder(data, uniform, max_node_idx=None):
@@ -173,7 +173,7 @@ class BatchNeighborFinder:
         neighbors[i, n_neighbors - len(source_neighbors):] = source_neighbors
         edge_times[i, n_neighbors - len(source_edge_times):] = source_edge_times
         edge_idxs[i, n_neighbors - len(source_edge_idxs):] = source_edge_idxs
-    print(neighbors, edge_idxs, edge_times)
+    # print(neighbors, edge_idxs, edge_times)
 
     return neighbors, edge_idxs, edge_times
 
