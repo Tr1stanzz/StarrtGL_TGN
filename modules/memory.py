@@ -21,6 +21,7 @@ class Memory(nn.Module):
     if mailbox is not None:
        with torch.no_grad():
         memory,memory_ts,mail,mail_ts = mailbox.get_memory_by_scatter(node_ids)
+        # print(torch.equal(memory_ts,mail_ts))
         self.memory = memory.clone()
         self.last_update = memory_ts.clone()
         self.mail = mail.clone()

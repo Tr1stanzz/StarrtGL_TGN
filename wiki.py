@@ -35,9 +35,9 @@ def compute_shift_time_statics(edge_ts, sources, destinations):
     return mean_time_shift_src, std_time_shift_src, mean_time_shift_dst, std_time_shift_dst
 
 
-g_df = pd.read_csv('./wiki/ml_{}.csv'.format('wikipedia'))
-e_feat = np.load('./wiki/ml_{}.npy'.format('wikipedia'))
-n_feat = np.load('./wiki/ml_{}_node.npy'.format('wikipedia'))
+g_df = pd.read_csv('./data/wiki/ml_{}.csv'.format('wikipedia'))
+e_feat = np.load('./data/wiki/ml_{}.npy'.format('wikipedia'))
+n_feat = np.load('./data/wiki/ml_{}_node.npy'.format('wikipedia'))
 
 val_time, test_time = list(np.quantile(g_df.ts, [0.70, 0.85]))
 
@@ -79,19 +79,19 @@ test_label_l = label_l[valid_val_flag]
 
 data = Data()
 data.edge_index = torch.cat((torch.from_numpy(np.array(src_l)).long()[np.newaxis, :],torch.from_numpy(np.array(dst_l)).long()[np.newaxis, :]),0)
-data.edge_index = torch.cat((data.edge_index,data.edge_index[torch.tensor([1,0])]),1)
+# data.edge_index = torch.cat((data.edge_index,data.edge_index[torch.tensor([1,0])]),1)
 data.edge_attr = torch.from_numpy(np.array(e_feat))[1:]
-data.edge_attr = torch.cat((data.edge_attr,data.edge_attr),0)
+# data.edge_attr = torch.cat((data.edge_attr,data.edge_attr),0)
 data.x = torch.from_numpy(np.array(n_feat))
 data.train_mask =  (torch.from_numpy(np.array(valid_train_flag)))
-data.train_mask = torch.cat((data.train_mask,data.train_mask),0)
+# data.train_mask = torch.cat((data.train_mask,data.train_mask),0)
 data.val_mask = torch.from_numpy(np.array(valid_val_flag))
-data.val_mask  = torch.cat((data.val_mask ,data.val_mask ),0)
+# data.val_mask  = torch.cat((data.val_mask ,data.val_mask ),0)
 data.test_mask = torch.from_numpy(np.array(valid_test_flag))
-data.test_mask = torch.cat((data.test_mask,data.test_mask),0)
+# data.test_mask = torch.cat((data.test_mask,data.test_mask),0)
 data.edge_ts = torch.from_numpy(np.array(ts_l))
-data.edge_ts = torch.cat((data.edge_ts,data.edge_ts),0)
+# data.edge_ts = torch.cat((data.edge_ts,data.edge_ts),0)
 data.y = torch.from_numpy(np.array(label_l))
-data.y= torch.cat((data.y,data.y),0)
-partition_save('./wiki', data, 2, 'metis')
+# data.y= torch.cat((data.y,data.y),0)
+partition_save('./data/wiki', data, 2, 'metis')
 

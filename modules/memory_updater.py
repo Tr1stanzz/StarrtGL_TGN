@@ -11,7 +11,7 @@ class SequenceMemoryUpdater(MemoryUpdater):
   def __init__(self, memory, message_dimension, memory_dimension, device):
     super(SequenceMemoryUpdater, self).__init__()
     self.memory = memory
-    self.layer_norm = torch.nn.LayerNorm(memory_dimension)
+    # self.layer_norm = torch.nn.LayerNorm(memory_dimension)
     self.message_dimension = message_dimension
     self.device = device
 
@@ -39,13 +39,17 @@ class SequenceMemoryUpdater(MemoryUpdater):
   #   self.memory.set_memory(unique_node_ids, updated_memory)
 
   def get_updated_memory_by_mailbox(self, unique_node_ids, time_encoder):
-    if len(unique_node_ids) <= 0:
-      # print("WTF?!")
-      return self.memory.memory.data.clone(), self.memory.last_update.data.clone()
+    # if len(unique_node_ids) <= 0:
+    #   # print("WTF?!")
+    #   return self.memory.memory.data.clone(), self.memory.last_update.data.clone()
     
     delta_time = self.memory.mail_ts[unique_node_ids] - self.memory.last_update[unique_node_ids]
-    time_encoding = time_encoder(delta_time.unsqueeze(1)).view(len(unique_node_ids), -1)
+    if len(delta_time) != 0:
+      time_encoding = time_encoder(delta_time.unsqueeze(1)).view(len(unique_node_ids), -1)
+    else:
+      time_encoding = time_encoder(delta_time.unsqueeze(1)).squeeze(1)
     mails = self.memory.mail[unique_node_ids].squeeze(1)
+    # print(mails.shape, time_encoding.shape)
     mails = torch.cat([mails, time_encoding], dim=1)
     self.memory.memory[unique_node_ids] = self.memory_updater(mails, self.memory.memory[unique_node_ids])
 

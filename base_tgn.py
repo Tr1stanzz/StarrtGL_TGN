@@ -29,7 +29,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.distributed import init_process_group, destroy_process_group
 from shared_mailbox import SharedMailBox, SharedRPCMemoryManager
 
-torch.autograd.set_detect_anomaly = True
+
 torch.manual_seed(0)
 np.random.seed(0)
 
@@ -172,7 +172,7 @@ for i in range(args.n_runs):
             use_source_embedding_in_message=args.use_source_embedding_in_message,
             use_inner_product=args.use_inner_product,
             dyrep=args.dyrep).to(device)
-  model = DDP(model,find_unused_parameters=True)
+  model = DDP(model)
   criterion = torch.nn.BCELoss()
   optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
   model = model.to(device)
@@ -188,20 +188,22 @@ for i in range(args.n_runs):
     if mailbox is not None:
         mailbox.reset()
     last_time = time.time()
+
     # with torch.autograd.detect_anomaly():
     for batchData in trainloader:
         loss = 0
         sample_time += time.time() - last_time
         t_tot_s = time.time()
         t_prep_s = time.time()
-        size = batchData.roots.edges.shape[1]
         edge_features = graph.data.edge_attr[batchData.roots.eids].to(device)
         # pdb.set_trace()
         pos_prob, neg_prob = model(batchData, edge_features, mailbox=mailbox, n_neighbors=FANOUT)
         loss = criterion(pos_prob, torch.ones_like(pos_prob)) 
         loss = loss + criterion(neg_prob, torch.zeros_like(neg_prob))
         # print("Before backwarad")
-        loss.backward(retain_graph=True)
+        loss.backward()
+        # ls = [name for name,para in model.named_parameters() if para.grad==None]
+        # print(ls)
         # print(cnt)
         cnt+=1
         optimizer.step()
@@ -209,5 +211,7 @@ for i in range(args.n_runs):
         y_pred = torch.cat([pos_prob, neg_prob], dim=0).sigmoid().cpu()
         y_true = torch.cat([torch.ones(pos_prob.size(0)), torch.zeros(neg_prob.size(0))], dim=0)
         train_aps.append(average_precision_score(y_true, y_pred.detach().numpy()))
+        # print("batch: {} loss: {} ap: {}".format(cnt,loss.item(),train_aps[-1]))
     train_ap = float(torch.tensor(train_aps).mean()) 
-    print('\ttrain mean loss:{:.4f}  train ap:{:4f}'.format(np.mean(m_loss),train_ap))
+    epoch_time = time.time() - start_epoch
+    print('\ttrain mean loss:{:.4f}  train ap:{:4f}, epoch_time:{}'.format(np.mean(m_loss),train_ap,epoch_time))

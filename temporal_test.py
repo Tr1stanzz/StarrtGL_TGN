@@ -130,39 +130,40 @@ def main():
     # start_time = time.time()
     cnt = 0
     for batchData in trainloader:
-        if cnt == 5:
+        if cnt <= 5:
             # print(batchData.roots.eids)
-            # print(batchData.roots.edges.shape)
-            # print(batchData.roots.ts.device)
+            print(batchData.roots.edges.shape)
+            # print(batchData.roots.ts)
             # print(batchData.nids.shape)
             # print(batchData.nids)
-            edge_index = batchData.edge_index[0]
-            edge_ts = batchData.edge_ts[0]
-            eids = batchData.eids[0]
-            neighbor_data = torch.cat([edge_index,edge_ts[0,:].unsqueeze(0),eids.unsqueeze(0)],dim = 0)
-            sample_nodes, node_inverse_indices, node_count = torch.unique_consecutive(edge_index[1,:], return_counts=True, return_inverse=True)
-            sources_batch = batchData.meta_data['src_id']
-            destinations_batch = batchData.meta_data['dst_pos_id']
-            negatives_batch = batchData.meta_data['dst_neg_id']
-            timestamps = batchData.roots.ts
-            is_sorted = torch.equal(timestamps, torch.sort(timestamps)[0])
-            print(is_sorted)
-            sample_ts, ts_inverse_indices, ts_count = torch.unique_consecutive(edge_ts[1,:], return_counts=True, return_inverse=True)
-            _, node_begins = np.unique(node_inverse_indices.cpu().numpy(), return_index=True)
-            _, ts_begins = np.unique(ts_inverse_indices.cpu().numpy(), return_index=True)
-            ts_begins = torch.tensor(ts_begins)
-            idx = 123
-            print("src:", sources_batch[idx], "dst:", destinations_batch[idx], "neg:", negatives_batch[idx], " ts:", timestamps[idx])
-            ts_idx = torch.nonzero(sample_ts==timestamps[idx])[:,0]
-            print("ts_idx:", ts_idx)
-            neighbor_lst = []
-            for s, c in zip(ts_begins[ts_idx], ts_count[ts_idx]):
-                neighbors = torch.narrow(neighbor_data,1,s,c)
-                if(torch.unique(torch.cat([neighbors[1,:], sources_batch[idx].view(-1)],dim=0),dim=0).shape[0] == 1):
-                    neighbor_lst.append(neighbors)
-            print("neighbor_lst:", neighbor_lst)
-            neighbor_tensor  = neighbor_lst[0]
-            source_neighbors, source_edge_idxs, source_edge_times = neighbor_tensor[0,:].numpy(), neighbor_tensor[3,:].numpy(), neighbor_tensor[2,:].numpy()
+
+            # edge_index = batchData.edge_index[0]
+            # edge_ts = batchData.edge_ts[0]
+            # eids = batchData.eids[0]
+            # neighbor_data = torch.cat([edge_index,edge_ts[0,:].unsqueeze(0),eids.unsqueeze(0)],dim = 0)
+            # sample_nodes, node_inverse_indices, node_count = torch.unique_consecutive(edge_index[1,:], return_counts=True, return_inverse=True)
+            # sources_batch = batchData.meta_data['src_id']
+            # destinations_batch = batchData.meta_data['dst_pos_id']
+            # negatives_batch = batchData.meta_data['dst_neg_id']
+            # timestamps = batchData.roots.ts
+            # is_sorted = torch.equal(timestamps, torch.sort(timestamps)[0])
+            # print(is_sorted)
+            # sample_ts, ts_inverse_indices, ts_count = torch.unique_consecutive(edge_ts[1,:], return_counts=True, return_inverse=True)
+            # _, node_begins = np.unique(node_inverse_indices.cpu().numpy(), return_index=True)
+            # _, ts_begins = np.unique(ts_inverse_indices.cpu().numpy(), return_index=True)
+            # ts_begins = torch.tensor(ts_begins)
+            # idx = 123
+            # print("src:", sources_batch[idx], "dst:", destinations_batch[idx], "neg:", negatives_batch[idx], " ts:", timestamps[idx])
+            # ts_idx = torch.nonzero(sample_ts==timestamps[idx])[:,0]
+            # print("ts_idx:", ts_idx)
+            # neighbor_lst = []
+            # for s, c in zip(ts_begins[ts_idx], ts_count[ts_idx]):
+            #     neighbors = torch.narrow(neighbor_data,1,s,c)
+            #     if(torch.unique(torch.cat([neighbors[1,:], sources_batch[idx].view(-1)],dim=0),dim=0).shape[0] == 1):
+            #         neighbor_lst.append(neighbors)
+            # print("neighbor_lst:", neighbor_lst)
+            # neighbor_tensor  = neighbor_lst[0]
+            # source_neighbors, source_edge_idxs, source_edge_times = neighbor_tensor[0,:].numpy(), neighbor_tensor[3,:].numpy(), neighbor_tensor[2,:].numpy()
             # src = sources_batch
             # dst = destinations_batch
             # nid = torch.cat([src.unsqueeze(1), dst.unsqueeze(1)], dim=1).reshape(-1)
